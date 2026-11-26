@@ -1,0 +1,240 @@
+# dbt Sources configuration
+# Defines raw data sources in BRONZE schema
+
+version: 2
+
+sources:
+  saas_analytics:
+    name: "SaaS Analytics Platform - Raw Data Sources"
+    description: "Raw data extracted from source systems and loaded to BRONZE schema"
+    database: "SAAS_ANALYTICS"
+    schema: "BRONZE"
+    
+    tables:
+      # Customer Data Source
+      - name: br_customers
+        description: "Raw customer records from CRM system"
+        columns:
+          - name: customer_id
+            description: "Unique customer identifier from source system"
+            tests:
+              - unique
+              - not_null
+          - name: customer_name
+            description: "Customer organization name"
+            tests:
+              - not_null
+          - name: email
+            description: "Primary contact email"
+          - name: country
+            description: "Customer country code (ISO 3166-1)"
+          - name: segment
+            description: "Customer segment (Enterprise, Mid-Market, SMB)"
+            tests:
+              - accepted_values:
+                  values: ['Enterprise', 'Mid-Market', 'SMB', 'Startup']
+          - name: created_at
+            description: "Customer creation timestamp"
+            tests:
+              - not_null
+          - name: updated_at
+            description: "Customer record last update timestamp"
+        
+        freshness:
+          warn_after: { count: 24, period: hour }
+          error_after: { count: 48, period: hour }
+        
+        loaded_at_field: ingestion_timestamp
+      
+      # Subscription Data Source
+      - name: br_subscriptions
+        description: "Raw subscription records from billing system"
+        columns:
+          - name: subscription_id
+            description: "Unique subscription identifier"
+            tests:
+              - unique
+              - not_null
+          - name: customer_id
+            description: "Foreign key to customer"
+            tests:
+              - not_null
+              - relationships:
+                  to: source('saas_analytics', 'br_customers')
+                  field: customer_id
+          - name: product_id
+            description: "Foreign key to product"
+            tests:
+              - not_null
+          - name: monthly_amount
+            description: "Monthly subscription amount in USD"
+            tests:
+              - not_null
+              - dbt_utils.expression_is_true:
+                  expression: ">= 0"
+          - name: status
+            description: "Subscription status"
+            tests:
+              - not_null
+              - accepted_values:
+                  values: ['active', 'cancelled', 'paused', 'pending']
+          - name: start_date
+            description: "Subscription start date"
+            tests:
+              - not_null
+          - name: end_date
+            description: "Subscription end date (null if active)"
+          - name: renewal_date
+            description: "Next renewal date"
+        
+        freshness:
+          warn_after: { count: 24, period: hour }
+          error_after: { count: 48, period: hour }
+        
+        loaded_at_field: ingestion_timestamp
+      
+      # Invoice Data Source
+      - name: br_invoices
+        description: "Raw invoice records from billing system"
+        columns:
+          - name: invoice_id
+            description: "Unique invoice identifier"
+            tests:
+              - unique
+              - not_null
+          - name: subscription_id
+            description: "Foreign key to subscription"
+            tests:
+              - not_null
+              - relationships:
+                  to: source('saas_analytics', 'br_subscriptions')
+                  field: subscription_id
+          - name: customer_id
+            description: "Foreign key to customer"
+            tests:
+              - not_null
+          - name: invoice_amount
+            description: "Total invoice amount"
+            tests:
+              - not_null
+              - dbt_utils.expression_is_true:
+                  expression: ">= 0"
+          - name: invoice_date
+            description: "Invoice creation date"
+            tests:
+              - not_null
+          - name: due_date
+            description: "Invoice payment due date"
+          - name: invoice_status
+            description: "Invoice status"
+            tests:
+              - accepted_values:
+                  values: ['draft', 'sent', 'paid', 'overdue', 'cancelled']
+        
+        freshness:
+          warn_after: { count: 24, period: hour }
+          error_after: { count: 48, period: hour }
+        
+        loaded_at_field: ingestion_timestamp
+      
+      # Payment Data Source
+      - name: br_payments
+        description: "Raw payment transaction records"
+        columns:
+          - name: payment_id
+            description: "Unique payment identifier"
+            tests:
+              - unique
+              - not_null
+          - name: invoice_id
+            description: "Foreign key to invoice"
+            tests:
+              - not_null
+              - relationships:
+                  to: source('saas_analytics', 'br_invoices')
+                  field: invoice_id
+          - name: payment_amount
+            description: "Payment amount in USD"
+            tests:
+              - not_null
+              - dbt_utils.expression_is_true:
+                  expression: "> 0"
+          - name: payment_date
+            description: "Date payment was received"
+            tests:
+              - not_null
+          - name: payment_method
+            description: "Payment method used"
+            tests:
+              - accepted_values:
+                  values: ['credit_card', 'bank_transfer', 'check', 'other']
+          - name: payment_status
+            description: "Payment status"
+            tests:
+              - accepted_values:
+                  values: ['pending', 'completed', 'failed', 'refunded']
+        
+        freshness:
+          warn_after: { count: 24, period: hour }
+          error_after: { count: 48, period: hour }
+        
+        loaded_at_field: ingestion_timestamp
+      
+      # Product Usage Data Source
+      - name: br_product_usage
+        description: "Raw product usage event logs"
+        columns:
+          - name: usage_id
+            description: "Unique usage event identifier"
+            tests:
+              - unique
+              - not_null
+          - name: customer_id
+            description: "Customer identifier"
+            tests:
+              - not_null
+              - relationships:
+                  to: source('saas_analytics', 'br_customers')
+                  field: customer_id
+          - name: product_id
+            description: "Product identifier"
+            tests:
+              - not_null
+          - name: event_type
+            description: "Type of product usage event"
+            tests:
+              - accepted_values:
+                  values: ['login', 'export', 'api_call', 'report_generated', 'query_run']
+          - name: event_date
+            description: "Date the event occurred"
+            tests:
+              - not_null
+          - name: event_count
+            description: "Number of times event occurred"
+            tests:
+              - not_null
+              - dbt_utils.expression_is_true:
+                  expression: "> 0"
+        
+        freshness:
+          warn_after: { count: 24, period: hour }
+          error_after: { count: 48, period: hour }
+        
+        loaded_at_field: ingestion_timestamp
+
+# Data tests (custom business logic tests)
+data_tests:
+  - name: test_no_future_dates
+    description: "Verify no records have dates in the future"
+    statement: |
+      SELECT *
+      FROM {{ source('saas_analytics', 'br_customers') }}
+      WHERE created_at > CURRENT_DATE()
+    
+  - name: test_duplicate_records
+    description: "Check for duplicate customer records"
+    statement: |
+      SELECT customer_id, COUNT(*) as count
+      FROM {{ source('saas_analytics', 'br_customers') }}
+      GROUP BY customer_id
+      HAVING COUNT(*) > 1

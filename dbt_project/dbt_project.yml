@@ -1,0 +1,128 @@
+# Name your project! Project names should be lowercase and use underscores as separators
+name: 'saas_analytics_dbt'
+version: '1.0.0'
+config-version: 2
+
+# This setting configures which "profile" dbt uses for this project.
+profile: 'saas_analytics'
+
+# These configurations specify where dbt should look for different types of files.
+model-paths: ["models"]
+analysis-paths: ["analyses"]
+test-paths: ["tests"]
+data-paths: ["data"]
+macro-paths: ["macros"]
+snapshot-paths: ["snapshots"]
+target-path: "target"
+clean-targets:
+  - "target"
+  - "dbt_packages"
+
+# Configuring models
+models:
+  saas_analytics_dbt:
+    # Model configurations for staging models
+    staging:
+      materialized: view
+      +contract:
+        enforced: true
+      schema: silver
+      
+    # Intermediate models
+    intermediate:
+      materialized: view
+      schema: silver
+      
+    # Mart models
+    marts:
+      materialized: table
+      schema: gold
+      
+      # Dimension tables - clustered for performance
+      dimensions:
+        materialized: table
+        +cluster_by: ['{{ column_names(table=this, type="key") }}']
+        
+      # Fact tables - clustered and incremental
+      facts:
+        materialized: incremental
+        +cluster_by: ['subscription_key', 'customer_key', 'date_key']
+        
+      # Metrics - materialized views for performance
+      metrics:
+        materialized: table
+        
+    # Snapshots for slowly changing dimensions
+    snapshots:
+      +tags: ["snapshot"]
+
+# Configure snapshot settings
+snapshots:
+  saas_analytics_dbt:
+    target_schema: snapshots
+
+# Variables
+vars:
+  # Data freshness thresholds (in hours)
+  source_freshness_threshold: 24
+  
+  # Date boundaries for analysis
+  analysis_start_date: '2020-01-01'
+  
+  # Business logic parameters
+  mrr_calculation_method: 'subscription_based'  # or 'invoice_based'
+  nrr_period_months: 12
+  
+  # Feature flags
+  enable_incremental_loads: true
+  enable_quality_checks: true
+  
+  # Test data size (number of records)
+  test_customer_count: 100
+  test_subscription_count: 150
+  test_invoice_count: 500
+  test_payment_count: 1000
+
+# Seed configurations (CSV file data loading)
+seeds:
+  quote_columns: true
+  schema: bronze
+
+# Test configurations
+tests:
+  saas_analytics_dbt:
+    +database: "{{ env_var('SNOWFLAKE_DATABASE', 'SAAS_ANALYTICS') }}"
+
+# Source freshness checks
+sources:
+  saas_analytics_dbt:
+    freshness:
+      warn_after: { count: 24, period: hour }
+      error_after: { count: 48, period: hour }
+
+# Package dependencies
+packages:
+  - package: dbt-labs/dbt_utils
+    version: 1.1.1
+  - package: dbt-labs/dbt_expectations
+    version: 0.8.0
+  - package: calogica/dbt_expectations
+    version: 0.8.0
+
+# Global dbt settings
+dispatch:
+  macro_namespace: dbt
+
+# SQL dialect
+sql_header: "-- dbt SQL query"
+
+# On-run-start and on-run-end
+on-run-start:
+  - "{{ log('dbt run started at ' ~ now(), info=true) }}"
+
+on-run-end:
+  - "{{ log('dbt run completed successfully', info=true) }}"
+
+# Hooks can be used for database maintenance
+# post-hook: Run after model execution
+# pre-hook: Run before model execution

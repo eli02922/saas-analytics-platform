@@ -1,0 +1,143 @@
+# Docker Compose for Local Development
+# Start with: docker-compose up -d
+# Stop with: docker-compose down
+
+version: '3.8'
+
+services:
+  # PostgreSQL Database (for Airflow metadata and local development)
+  postgres:
+    image: postgres:15-alpine
+    container_name: saas-analytics-postgres
+    environment:
+      POSTGRES_USER: airflow
+      POSTGRES_PASSWORD: airflow
+      POSTGRES_DB: airflow
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+    healthcheck:
+      test: ["CMD", "pg_isready", "-U", "airflow"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # Redis (for Airflow task queue)
+  redis:
+    image: redis:7-alpine
+    container_name: saas-analytics-redis
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # Airflow Webserver
+  airflow-webserver:
+    build:
+      context: ./docker/airflow
+      dockerfile: Dockerfile
+    container_name: saas-analytics-airflow-webserver
+    depends_on:
+      - postgres
+      - redis
+    environment:
+      AIRFLOW_HOME: /opt/airflow
+      AIRFLOW__CORE__DAGS_FOLDER: /opt/airflow/dags
+      AIRFLOW__CORE__LOAD_EXAMPLES: 'False'
+      AIRFLOW__CORE__UNIT_TEST_MODE: 'True'
+      AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://airflow:airflow@postgres:5432/airflow
+      AIRFLOW__CELERY__BROKER_URL: redis://redis:6379/0
+      AIRFLOW__CELERY__RESULT_BACKEND: db+postgresql://airflow:airflow@postgres:5432/airflow
+      AIRFLOW__CORE__FERNET_KEY: your_fernet_key_here
+      _AIRFLOW_WWW_USER_USERNAME: airflow
+      _AIRFLOW_WWW_USER_PASSWORD: airflow
+    ports:
+      - "8080:8080"
+    volumes:
+      - ./src/airflow_dags:/opt/airflow/dags
+      - ./logs/airflow:/opt/airflow/logs
+      - ./config:/opt/airflow/config
+      - ./src:/opt/airflow/src
+    command: >
+      bash -c "airflow db init &&
+               airflow users create --username airflow --password airflow --firstname Admin --lastname Admin --role Admin --email admin@example.com &&
+               airflow webserver"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+
+  # Airflow Scheduler
+  airflow-scheduler:
+    build:
+      context: ./docker/airflow
+      dockerfile: Dockerfile
+    container_name: saas-analytics-airflow-scheduler
+    depends_on:
+      - postgres
+      - redis
+      - airflow-webserver
+    environment:
+      AIRFLOW_HOME: /opt/airflow
+      AIRFLOW__CORE__DAGS_FOLDER: /opt/airflow/dags
+      AIRFLOW__CORE__LOAD_EXAMPLES: 'False'
+      AIRFLOW__CORE__UNIT_TEST_MODE: 'True'
+      AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://airflow:airflow@postgres:5432/airflow
+      AIRFLOW__CELERY__BROKER_URL: redis://redis:6379/0
+      AIRFLOW__CELERY__RESULT_BACKEND: db+postgresql://airflow:airflow@postgres:5432/airflow
+    volumes:
+      - ./src/airflow_dags:/opt/airflow/dags
+      - ./logs/airflow:/opt/airflow/logs
+      - ./config:/opt/airflow/config
+      - ./src:/opt/airflow/src
+    command: airflow scheduler
+
+  # Airflow Worker (Celery)
+  airflow-worker:
+    build:
+      context: ./docker/airflow
+      dockerfile: Dockerfile
+    container_name: saas-analytics-airflow-worker
+    depends_on:
+      - postgres
+      - redis
+      - airflow-webserver
+    environment:
+      AIRFLOW_HOME: /opt/airflow
+      AIRFLOW__CORE__DAGS_FOLDER: /opt/airflow/dags
+      AIRFLOW__CORE__LOAD_EXAMPLES: 'False'
+      AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://airflow:airflow@postgres:5432/airflow
+      AIRFLOW__CELERY__BROKER_URL: redis://redis:6379/0
+      AIRFLOW__CELERY__RESULT_BACKEND: db+postgresql://airflow:airflow@postgres:5432/airflow
+    volumes:
+      - ./src/airflow_dags:/opt/airflow/dags
+      - ./logs/airflow:/opt/airflow/logs
+      - ./config:/opt/airflow/config
+      - ./src:/opt/airflow/src
+    command: airflow celery worker
+    deploy:
+      replicas: 2  # Scale to multiple workers as needed
+
+  # Flower (Celery Monitoring)
+  flower:
+    image: mher/flower:2.0
+    container_name: saas-analytics-flower
+    depends_on:
+      - redis
+    ports:
+      - "5555:5555"
+    environment:
+      CELERY_BROKER_URL: redis://redis:6379/0
+      CELERY_RESULT_BACKEND: redis://redis:6379/0
+
+volumes:
+  postgres_data:
+
+networks:
+  default:
+    name: saas-analytics-network

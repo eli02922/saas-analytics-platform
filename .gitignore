@@ -1,0 +1,93 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+pip-wheel-metadata/
+share/python-wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+MANIFEST
+*.venv
+venv/
+env/
+ENV/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+
+# dbt
+target/
+dbt_packages/
+logs/
+.user.yml
+profiles.yml
+
+# Airflow
+airflow/logs/
+airflow/dags/__pycache__/
+airflow.db
+unittests.db
+
+# Environment variables
+.env
+.env.local
+.env.*.local
+
+# Credentials and secrets
+**/credentials.json
+**/secrets.yml
+**/secrets.yaml
+**/secrets.json
+**/config_prod.yml
+**/config_prod.yaml
+
+# Snowflake
+connection.json
+snowflake_config.yml
+
+# Power BI
+*.pbix
+*.pbit
+
+# Docker
+.docker/
+docker-compose.override.yml
+
+# OS
+Thumbs.db
+.DS_Store
+
+# Temporary files
+*.tmp
+*.log
+*.bak
+
+# Test coverage
+.coverage
+htmlcov/
+.pytest_cache/
+
+# Node (if used)
+node_modules/
+package-lock.json
+yarn.lock
